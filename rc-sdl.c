@@ -237,6 +237,7 @@ void doInput(){
                     break;
                 }
             }
+
             insert_to_key_arr(key_up_arr, event);
         }
     }
@@ -290,11 +291,11 @@ void movement(int button){
         if (move_state == true){
             if (shake_up){
                 if (cam_shake >= 20) shake_up = false;
-                else cam_shake += PLAYER_SPEED / 1.5;
+                else cam_shake += PLAYER_SPEED / 2.0;
                 
             } else {
                 if (cam_shake <= -20) shake_up = true;
-                else cam_shake -= PLAYER_SPEED / 1.5;
+                else cam_shake -= PLAYER_SPEED / 2.0;
                 
             }
         }
@@ -329,10 +330,11 @@ void input_handler(){
         }
     }
     for (int i = 0; i < 20; i++){
-        if (key_down_arr[i] == 0) break;
+        if (key_up_arr[i] == 0) break;
         else if (key_up_arr[i] == SDLK_LSHIFT){
             run_state = false;
         }
+        key_up_arr[i] = 0;
     }
 }
 
