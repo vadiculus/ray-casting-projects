@@ -58,6 +58,10 @@ typedef struct {
     SDL_Texture *texture;
     int w;
     int h;
+    bool is_animated;
+    int anim_slice_x;
+    int anim_slice_y;
+    int margin_left;
 } Texture;
 
 typedef struct {
@@ -115,6 +119,7 @@ int gobjects_cnt;
 
 float cam_shake = 0;
 bool shake_up = true;
+bool already_shacked = false;
 
 char board_draw[BOARD_HEIGHT][BOARD_WIDTH + 1] = \
     {
@@ -122,24 +127,24 @@ char board_draw[BOARD_HEIGHT][BOARD_WIDTH + 1] = \
         "#                  #",
         "#######-# #######  #",
         "#          |       #",
-        "#### #     #       #",
-        "#  # |   0-00   -  #",
-        "#  # #   0   0     #",
+        "####0#     #       #",
+        "#  # |   0-00      #",
+        "#  #0#   0   0     #",
         "#      0#### 0     #",
-        "#      0     0  #  #",
-        "#      0 ####0  #  #",
-        "####   0      0#   #",
-        "#      0 000       #",
-        "####      ### ######",
-        "#  #               #",
-        "#  # 00            #",
-        "#             #    #",
-        "#             0    #",
+        "#      0     0  ##-#",
+        "#      0 ####0-0   #",
+        "#####-0        0##-#",
+        "#      0-0000-0    #",
+        "####   #  ### ###-##",
+        "#  #   |           #",
+        "#  ##00#           #",
+        "#      #      #    #",
+        "#      |      0    #",
         "########0###########",
     };
 
-SDL_Surface *wall_sf, *concrete_sf, *shotgun_sf, *floor_sf, *mob_sf, *barrel_sf, *door_sf;
-Texture wall_tx, concrete_tx, floor_tx, shotgun_tx, mob_tx, barrel_tx, door_tx;
+SDL_Surface *wall_sf, *concrete_sf, *shotgun_sf, *floor_sf, *caco_sf, *barrel_sf, *door_sf, *sky_sf;
+Texture wall_tx, concrete_tx, floor_tx, shotgun_tx, caco_tx, barrel_tx, door_tx, sky_tx;
 
 Block board[BOARD_HEIGHT][BOARD_WIDTH];
 Block *doors[BOARD_HEIGHT*BOARD_WIDTH];
@@ -239,7 +244,7 @@ void doInput(){
             if (!exit_mode){
                 SDL_GetMouseState(&mouse_x, &mouse_y);
 
-                player.angle -= (WIN_WIDTH / 2 - mouse_x) * 0.1;
+                player.angle -= (WIN_WIDTH / 2 - mouse_x) * 0.03;
                 cent_angle = player.angle + PLAYER_FOV / 2;
                 SDL_WarpMouseInWindow(window, WIN_WIDTH/2, WIN_HEIGHT/2);
             }
@@ -360,14 +365,14 @@ void movement(int button){
     // if (getrayxy(length_to_wall, movement_angle, float *x, float *y, bool is_x_intercept, bool wall_alignment))
     getrayxy(player.speed, movement_angle, &new_x, &new_y, NULL);
     if (check_player_collision(player.x + new_x, player.y + new_y)){
-        if (is_x_collision) slide_angle = (int)(movement_angle / 90) * 90;
-        else slide_angle = (int)(movement_angle / 90) * 90 + 90;
+        // if (is_x_collision) slide_angle = (int)(movement_angle / 90) * 90;
+        // else slide_angle = (int)(movement_angle / 90) * 90 + 90;
 
-        getrayxy(player.speed, slide_angle, &new_x, &new_y, NULL);
-        if (check_player_collision(player.x + new_x, player.y + new_y)){
-            return;
-        }
-        slide_angle = (int)(movement_angle / 90) * 90 + 90;
+        // getrayxy(player.speed, slide_angle, &new_x, &new_y, NULL);
+        // if (check_player_collision(player.x + new_x, player.y + new_y)){
+        //     return;
+        // }
+        // slide_angle = (int)(movement_angle / 90) * 90 + 90;
         if (check_player_collision(player.x + new_x, player.y + new_y)){
             return;
         }
@@ -375,16 +380,17 @@ void movement(int button){
 
     player.x += new_x;
     player.y += new_y;
-    if (move_state == true){
+    if (move_state == true && !already_shacked){
         if (shake_up){
             if (cam_shake >= 20) shake_up = false;
-            else cam_shake += PLAYER_SPEED / 2.0;
+            else cam_shake += PLAYER_SPEED;
             
         } else {
             if (cam_shake <= -20) shake_up = true;
-            else cam_shake -= PLAYER_SPEED / 2.0;
+            else cam_shake -= PLAYER_SPEED;
             
         }
+        already_shacked = true;
     }
 
 }
@@ -471,8 +477,29 @@ void input_handler(){
     }
 }
 
-void renderTextureClipped(SDL_Renderer* cur_renderer, SDL_Texture* texture, SDL_Rect* clip, SDL_Rect* rect) {
-    SDL_RenderCopy(cur_renderer, texture, clip, rect);
+void draw_sky(){
+    SDL_Rect rect;
+    SDL_Rect clip;
+    rect.x = 0;
+    rect.y = cam_shake - 20;
+    rect.h = WIN_HEIGHT / 2;
+    if (player.angle + player.FOV > 360) 
+        rect.w = WIN_WIDTH - (player.angle + player.FOV - 360.0) / (player.FOV) * WIN_WIDTH;
+    else 
+        rect.w = WIN_WIDTH;
+    clip.w = player.FOV / 360.0 * sky_tx.w;
+    clip.x = player.angle / 360.0 * sky_tx.w;
+    clip.y = 0;
+    clip.h = clip.w * ((float)sky_tx.h / sky_tx.w) + 40;
+
+    SDL_RenderCopy(renderer, sky_tx.texture, &clip, &rect);
+    if (player.angle + player.FOV > 360){
+        clip.x = 0;
+        clip.w = player.FOV / 360.0 * sky_tx.w;
+        rect.x = WIN_WIDTH - (player.angle + player.FOV - 360.0) / (player.FOV) * WIN_WIDTH;
+        rect.w =  WIN_WIDTH;
+        SDL_RenderCopy(renderer, sky_tx.texture, &clip, &rect);
+    }
 }
 
 void draw_floor(){
@@ -518,33 +545,53 @@ void draw_objects(){
     for (int gi = 0; gi < gobjects_cnt; gi++){
         gobj = sorted_gobjects[gi];
         if (gobj == 0) continue;
-        angleTO = radToDeg(atan((double)((gobj->y - player.y) / (gobj->x - player.x))));
+        angleTO = radToDeg(atan((double)((gobj->y - player.y) / (gobj->x - player.x))));    // angle to object
 
         if (gobj->x > player.x && gobj->y < player.y) angleTO += 360;
         else if (gobj->x < player.x && gobj->y < player.y) angleTO += 180;
         else if (gobj->x < player.x && gobj->y > player.y) angleTO += 180;
+        // if (gobj == &gobjects[2]) printf("ato: %f\n", angleTO);
         
         float player_angle = player.angle > 360 - player.FOV && angleTO < 360 - player.FOV ? player.angle - 360 : player.angle;
         gobj->distance = fabs(sqrt(pow(gobj->y - player.y, 2) + pow(gobj->x - player.x, 2)));
 
         int obj_screen_pos = (angleTO - player_angle) / DELTA * (WIN_WIDTH / RAY_COUNT);
         int obj_h = WIN_HEIGHT / (gobj->distance * 0.018); 
-        int obj_w = obj_h * (gobj->texture->w / (float)gobj->texture->h);
+        int obj_w;
+        if (!gobj->texture->is_animated)
+            obj_w = obj_h * (gobj->texture->w / (float)gobj->texture->h);
+        else
+            obj_w = obj_h * (gobj->texture->anim_slice_x / (float)gobj->texture->anim_slice_y);
+
+
         int obj_y = WIN_HEIGHT / 2 - obj_h /2 - gobj ->z* obj_h /2;
-        if (gobj == &gobjects[0]) printf("%d\n",  obj_y);
 
         int bright = 255 - (gobj->distance / (800.0) * 255);
         if (bright < 0) bright = 0;
+
 
         for (int i = 0; i < obj_w; i += PIX_SIZE){
             ray_index = (int)((obj_screen_pos + i - obj_w / 2) / PIX_SIZE);
             if (ray_index < 0 || ray_index > RAY_COUNT - 1) continue;
             if (player.rays[ray_index].length > gobj->distance){
-
-                clip.x = (int)((float)i / (float)obj_w * mob_tx.w);
+                if (gobj->texture->is_animated){
+                        float angleTO_for_spr;
+                        if (angleTO <= 180){
+                            angleTO_for_spr = angleTO;
+                            clip.x = gobj->texture->margin_left + (int)(angleTO_for_spr / (180.0 / 5)) * gobj->texture->anim_slice_x + (gobj->texture->anim_slice_x - (int)((float)i / obj_w * gobj->texture->anim_slice_x));
+                        }  else {
+                            angleTO_for_spr = 180 - (angleTO - 180);
+                            clip.x = gobj->texture->margin_left + (int)(angleTO_for_spr / (180.0 / 5)) * gobj->texture->anim_slice_x + (int)((float)i / obj_w * gobj->texture->anim_slice_x);
+                        }
+                    }
+                else
+                    clip.x = (int)((float)i / obj_w * gobj->texture->w);
                 clip.y = 0;
                 clip.w = 1;
-                clip.h = gobj->texture->h;
+                if (gobj->texture->is_animated)
+                    clip.h = gobj->texture->anim_slice_y;
+                else
+                    clip.h = gobj->texture->h;
                 obj_rect.h = obj_h;
                 obj_rect.w = PIX_SIZE;
                 obj_rect.x = obj_screen_pos + i - obj_w / 2;
@@ -626,11 +673,11 @@ void draw_ray(int ray_num){
                 tx_rect.y = 0;
 
                 SDL_SetTextureColorMod(cur_tx->texture, bright, bright , bright);
-                renderTextureClipped(renderer, cur_tx->texture, &tx_rect, &rect);
+                SDL_RenderCopy(renderer, cur_tx->texture, &tx_rect, &rect);
                 break;
 
             } else if (cur_block->block_type == DOOR) {
-                if (cur_block->door_is_h){
+                if (cur_block->door_is_h){  // Door is horisontal
                     bool is_x_int;
                     float ib_x, ib_y;       // inner block x; inner block y;
                     float len_in_block;
@@ -673,7 +720,7 @@ void draw_ray(int ray_num){
                             tx_rect.y = 0;
 
                             SDL_SetTextureColorMod(cur_tx->texture, bright, bright , bright);
-                            renderTextureClipped(renderer, cur_tx->texture, &tx_rect, &rect);
+                            SDL_RenderCopy(renderer, cur_tx->texture, &tx_rect, &rect);
                             break;
                         }
                     }
@@ -721,7 +768,7 @@ void draw_ray(int ray_num){
                             tx_rect.y = 0;
 
                             SDL_SetTextureColorMod(cur_tx->texture, bright, bright , bright);
-                            renderTextureClipped(renderer, cur_tx->texture, &tx_rect, &rect);
+                            SDL_RenderCopy(renderer, cur_tx->texture, &tx_rect, &rect);
                             break;
                         }
                     }
@@ -750,9 +797,9 @@ void prepareScene(){
 
     SDL_RenderClear(renderer);
 
-    float cent_angle = player.angle + player.FOV / 2;
+    already_shacked = false;
 
-
+    draw_sky();
     draw_floor();
 
     for(int i=0; i < player.rays_count; i++){  
@@ -796,33 +843,41 @@ void create_textures(){
     concrete_sf = IMG_Load("stone.png");
     shotgun_sf = IMG_Load("shotgun.png");
     floor_sf = IMG_Load("floor.png");
-    mob_sf = IMG_Load("mob.png");
+    caco_sf = IMG_Load("cacodemon.png");
     barrel_sf = IMG_Load("barrel.png");
     door_sf = IMG_Load("door.png");
+    sky_sf = IMG_Load("sky.png");
 
     wall_tx.texture = SDL_CreateTextureFromSurface(renderer, wall_sf);
     concrete_tx.texture = SDL_CreateTextureFromSurface(renderer, concrete_sf);
     floor_tx.texture = SDL_CreateTextureFromSurface(renderer, concrete_sf);
     shotgun_tx.texture = SDL_CreateTextureFromSurface(renderer, shotgun_sf);
-    mob_tx.texture = SDL_CreateTextureFromSurface(renderer, mob_sf);
+    caco_tx.texture = SDL_CreateTextureFromSurface(renderer, caco_sf);
     barrel_tx.texture = SDL_CreateTextureFromSurface(renderer, barrel_sf);
     door_tx.texture = SDL_CreateTextureFromSurface(renderer, door_sf);
+    sky_tx.texture = SDL_CreateTextureFromSurface(renderer, sky_sf);
     
     SDL_QueryTexture(wall_tx.texture, NULL, NULL, &wall_tx.w, &wall_tx.h);
     SDL_QueryTexture(concrete_tx.texture, NULL, NULL, &concrete_tx.w, &concrete_tx.h);
     SDL_QueryTexture(floor_tx.texture, NULL, NULL, &floor_tx.w, &floor_tx.h);
     SDL_QueryTexture(shotgun_tx.texture, NULL, NULL, &shotgun_tx.w, &shotgun_tx.h);
-    SDL_QueryTexture(mob_tx.texture, NULL, NULL, &mob_tx.w, &mob_tx.h);
+    SDL_QueryTexture(caco_tx.texture, NULL, NULL, &caco_tx.w, &caco_tx.h);
     SDL_QueryTexture(barrel_tx.texture, NULL, NULL, &barrel_tx.w, &barrel_tx.h);
     SDL_QueryTexture(door_tx.texture, NULL, NULL, &door_tx.w, &door_tx.h);
+    SDL_QueryTexture(sky_tx.texture, NULL, NULL, &sky_tx.w, &sky_tx.h);
+    caco_tx.is_animated = true;
+    caco_tx.anim_slice_x = 75;
+    caco_tx.anim_slice_y = 75;
+    caco_tx.margin_left = 42;
 
     SDL_FreeSurface(wall_sf);
     SDL_FreeSurface(concrete_sf);
     SDL_FreeSurface(shotgun_sf);
     SDL_FreeSurface(floor_sf);
-    SDL_FreeSurface(mob_sf);
+    SDL_FreeSurface(caco_sf);
     SDL_FreeSurface(barrel_sf);
     SDL_FreeSurface(door_sf);
+    SDL_FreeSurface(sky_sf);
 }
 
 int main (int argv, char * argc[]){
@@ -838,9 +893,9 @@ int main (int argv, char * argc[]){
 
     create_textures();
     CLEAR(gobjects);
-    gobjects[0] = (GObject){500, 425, 0.8, &mob_tx, 0, 25, 25};
-    gobjects[1] = (GObject){750, 170, -2,  &barrel_tx, 0, 25, 25};
-    gobjects[2] = (GObject){700, 170, 2, &mob_tx, 0, 25, 25};
+    gobjects[0] = (GObject){500, 425, 0.8, &caco_tx, 0, 25, 25};
+    gobjects[1] = (GObject){750, 170, -0.4,  &barrel_tx, 0, 25, 25};
+    gobjects[2] = (GObject){800, 250, 0, &caco_tx, 0, 25, 25};
 
     gobjects_cnt = 3;
 
